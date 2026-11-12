@@ -11,7 +11,10 @@ const orderInclude = {
 } as const;
 
 async function findOrder(id: string) {
-  const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: orderInclude,
+  });
   if (!order) {
     throw new HttpError(404, "Заказ не найден");
   }
@@ -30,7 +33,10 @@ export async function getOrder(id: string) {
   return findOrder(id);
 }
 
-export async function createOrder(organizationId: string, input: CreateOrderInput) {
+export async function createOrder(
+  organizationId: string,
+  input: CreateOrderInput,
+) {
   const productIds = [...new Set(input.lines.map((line) => line.productId))];
   const products = await prisma.product.findMany({
     where: { id: { in: productIds }, organizationId },
@@ -41,11 +47,11 @@ export async function createOrder(organizationId: string, input: CreateOrderInpu
   const productById = new Map(products.map((product) => [product.id, product]));
   const discount = input.discountPercent;
 
-  let subtotal = 0;
+  // let subtotal = 0;
   const lines = input.lines.map((line) => {
     const unitPrice = Number(productById.get(line.productId)!.price);
     const gross = unitPrice * line.quantity;
-    subtotal += gross;
+    // subtotal += gross;
     return {
       productId: line.productId,
       quantity: line.quantity,
@@ -53,7 +59,22 @@ export async function createOrder(organizationId: string, input: CreateOrderInpu
       lineTotal: round2(applyDiscount(gross, discount)),
     };
   });
-  const total = round2(applyDiscount(subtotal, discount));
+  const total = round2(
+    lines.reduce((sum, line, index) => {
+      const result = sum + line.lineTotal;
+      // console.log(`[QA-101] Итерация ${index + 1}`);
+      // console.log("Накопленная сумма:", sum); 
+      // console.log("Сумма текущей строки:", line.lineTotal);
+      // console.log("Новый результат:", result);
+      // console.log("---------------------");
+      return result;
+    }, 0),
+  );
+
+  console.log("[QA-101] Итого:", total);
+
+  // const total = round2(lines.reduce((sum, line) => sum + line.lineTotal, 0));
+  // const total = round2(applyDiscount(subtotal, discount));
 
   const last = await prisma.order.aggregate({
     where: { organizationId },
@@ -81,7 +102,9 @@ export async function confirmOrder(id: string) {
   }
 
   for (const line of order.lines) {
-    const stock = await prisma.stockItem.findUnique({ where: { productId: line.productId } });
+    const stock = await prisma.stockItem.findUnique({
+      where: { productId: line.productId },
+    });
     if (!stock || stock.onHand < line.quantity) {
       throw new HttpError(409, `Не хватает товара «${line.product.name}»`);
     }

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/prisma.js";
-import { as, resetDb, seedTwoOrganizations, stockOf } from "./helpers.js";
+import { as, resetDb, seedTwoOrganizations, createProduct, stockOf } from "./helpers.js";
 
 let fixture: Awaited<ReturnType<typeof seedTwoOrganizations>>;
 
@@ -32,6 +32,49 @@ describe("создание заказа", () => {
     expect(res.body.status).toBe("DRAFT");
     expect(res.body.lines[0].lineTotal).toBe("2000");
     expect(res.body.total).toBe("2000");
+  });
+  it("QA-101: итог равен сумме округлённых строк", async () => {
+    const products = await Promise.all([
+      createProduct(fixture.orgA.id, {
+        sku: "TEA-BLK",
+        price: "333.33",
+        onHand: 10,
+      }),
+      createProduct(fixture.orgA.id, {
+        sku: "TEA-GRN",
+        price: "333.33",
+        onHand: 10,
+      }),
+      createProduct(fixture.orgA.id, {
+        sku: "TEA-HRB",
+        price: "333.33",
+        onHand: 10,
+      }),
+    ]);
+
+    const res = await as("alice").post("/api/orders", {
+      customerName: "Тест QA-101",
+      discountPercent: 10,
+      lines: products.map((product) => ({
+        productId: product.id,
+        quantity: 1,
+      })),
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.lines).toHaveLength(3);
+
+    for (const line of res.body.lines) {
+      expect(Number(line.lineTotal)).toBe(300);
+    }
+
+    const sumOfLines = res.body.lines.reduce(
+      (sum: number, line: { lineTotal: string }) =>
+        sum + Number(line.lineTotal),
+      0,
+    );
+    expect(Number(res.body.total)).toBe(900);
+    expect(Number(res.body.total)).toBe(sumOfLines);
   });
 
   it("применяет скидку", async () => {
@@ -90,7 +133,10 @@ describe("жизненный цикл заказа", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("CONFIRMED");
-    expect(await stockOf(fixture.productA.id)).toMatchObject({ onHand: 10, reserved: 3 });
+    expect(await stockOf(fixture.productA.id)).toMatchObject({
+      onHand: 10,
+      reserved: 3,
+    });
   });
 
   it("не подтверждает заказ, если товара на полке меньше, чем в заказе", async () => {
@@ -109,7 +155,10 @@ describe("жизненный цикл заказа", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("SHIPPED");
-    expect(await stockOf(fixture.productA.id)).toMatchObject({ onHand: 7, reserved: 0 });
+    expect(await stockOf(fixture.productA.id)).toMatchObject({
+      onHand: 7,
+      reserved: 0,
+    });
   });
 
   it("отмена подтверждённого заказа снимает резерв", async () => {
@@ -120,6 +169,9 @@ describe("жизненный цикл заказа", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("CANCELLED");
-    expect(await stockOf(fixture.productA.id)).toMatchObject({ onHand: 10, reserved: 0 });
+    expect(await stockOf(fixture.productA.id)).toMatchObject({
+      onHand: 10,
+      reserved: 0,
+    });
   });
 });
