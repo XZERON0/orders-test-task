@@ -148,6 +148,55 @@ describe("жизненный цикл заказа", () => {
     });
     return res.body.id as string;
   }
+  it("QA-103: не подтверждает второй заказ при отсутствии доступного остатка", async () => {
+    await prisma.stockItem.update({
+      where: { productId: fixture.productA.id },
+      data: { onHand: 1 },
+    });
+
+    const first = await createOrder(1);
+    const second = await createOrder(1);
+
+    const firstResponse = await as("alice").post(
+      `/api/orders/${first}/confirm`,
+    );
+
+    const secondResponse = await as("alice").post(
+      `/api/orders/${second}/confirm`,
+    );
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(409);
+
+    expect(await stockOf(fixture.productA.id)).toMatchObject({
+      onHand: 1,
+      reserved: 1,
+    });
+  });
+  it("QA-103: конкурентные подтверждения не превышают остаток", async () => {
+    await prisma.stockItem.update({
+      where: { productId: fixture.productA.id },
+      data: { onHand: 1 },
+    });
+
+    const first = await createOrder(1);
+    const second = await createOrder(1);
+
+    const [res1, res2] = await Promise.all([
+      as("alice").post(`/api/orders/${first}/confirm`),
+      as("alice").post(`/api/orders/${second}/confirm`),
+    ]);
+
+    const statuses = [res1.status, res2.status].sort();
+
+    expect(statuses).toEqual([200, 409]);
+
+    const stock = await stockOf(fixture.productA.id);
+
+    expect(stock.onHand).toBe(1);
+    expect(stock.reserved).toBe(1);
+    expect(stock.onHand - stock.reserved).toBe(0);
+  });
 
   it("подтверждение резервирует товар", async () => {
     const id = await createOrder(3);

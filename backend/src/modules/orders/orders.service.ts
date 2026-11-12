@@ -68,17 +68,15 @@ export async function createOrder(
     lines.reduce((sum, line, index) => {
       const result = sum + line.lineTotal;
       // console.log(`[QA-101] Итерация ${index + 1}`);
-      // console.log("Накопленная сумма:", sum); 
+      // console.log("Накопленная сумма:", sum);
       // console.log("Сумма текущей строки:", line.lineTotal);
       // console.log("Новый результат:", result);
       // console.log("---------------------");
       return result;
     }, 0),
   );
+  // console.log("[QA-101] Итого:", total);
 
-  console.log("[QA-101] Итого:", total);
-
-  // const total = round2(lines.reduce((sum, line) => sum + line.lineTotal, 0));
   // const total = round2(applyDiscount(subtotal, discount));
 
   const last = await prisma.order.aggregate({
@@ -100,30 +98,53 @@ export async function createOrder(
 }
 
 /** Подтверждение: проверяем наличие и резервируем товар под заказ. */
-export async function confirmOrder(id: string, organizationId:string) {
-  const order = await findOrder(id, organizationId);
-  if (order.status !== "DRAFT") {
-    throw new HttpError(409, "Подтвердить можно только черновик");
-  }
-
-  for (const line of order.lines) {
-    const stock = await prisma.stockItem.findUnique({
-      where: { productId: line.productId },
+export async function confirmOrder(
+  id: string,
+  organizationId: string,
+) {
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findFirst({
+      where: { id, organizationId },
+      include: orderInclude,
     });
-    if (!stock || stock.onHand < line.quantity) {
-      throw new HttpError(409, `Не хватает товара «${line.product.name}»`);
-    }
-  }
 
-  await prisma.$transaction([
-    ...order.lines.map((line) =>
-      prisma.stockItem.update({
-        where: { productId: line.productId },
-        data: { reserved: { increment: line.quantity } },
-      }),
-    ),
-    prisma.order.update({ where: { id }, data: { status: "CONFIRMED" } }),
-  ]);
+    if (!order) {
+      throw new HttpError(404, "Заказ не найден");
+    }
+
+    // Атомарно переводим заказ из DRAFT в CONFIRMED.
+    // Конкурентное подтверждение того же заказа не пройдёт.
+    const updated = await tx.order.updateMany({
+      where: {
+        id,
+        organizationId,
+        status: "DRAFT",
+      },
+      data: {
+        status: "CONFIRMED",
+      },
+    });
+
+    if (updated.count !== 1) {
+      throw new HttpError(409, "Подтвердить можно только черновик");
+    }
+
+    for (const line of order.lines) {
+      const affected = await tx.$executeRaw`
+        UPDATE stock_items
+        SET reserved = reserved + ${line.quantity}
+        WHERE product_id = ${line.productId}
+          AND on_hand - reserved >= ${line.quantity}
+      `;
+
+      if (affected !== 1) {
+        throw new HttpError(
+          409,
+          `Не хватает товара «${line.product.name}»`,
+        );
+      }
+    }
+  });
 
   return findOrder(id, organizationId);
 }
