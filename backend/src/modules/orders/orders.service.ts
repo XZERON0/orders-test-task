@@ -1,0 +1,149 @@
+import { prisma } from "../../lib/prisma.js";
+import { HttpError } from "../../lib/http-error.js";
+import { applyDiscount, round2 } from "../../lib/money.js";
+import type { CreateOrderInput } from "./orders.schema.js";
+
+const orderInclude = {
+  lines: {
+    include: { product: { select: { id: true, name: true, sku: true } } },
+    orderBy: { id: "asc" },
+  },
+} as const;
+
+async function findOrder(id: string) {
+  const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
+  if (!order) {
+    throw new HttpError(404, "Заказ не найден");
+  }
+  return order;
+}
+
+export async function listOrders(organizationId: string) {
+  return prisma.order.findMany({
+    where: { organizationId },
+    include: orderInclude,
+    orderBy: { number: "desc" },
+  });
+}
+
+export async function getOrder(id: string) {
+  return findOrder(id);
+}
+
+export async function createOrder(organizationId: string, input: CreateOrderInput) {
+  const productIds = [...new Set(input.lines.map((line) => line.productId))];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds }, organizationId },
+  });
+  if (products.length !== productIds.length) {
+    throw new HttpError(400, "Товар не найден");
+  }
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const discount = input.discountPercent;
+
+  let subtotal = 0;
+  const lines = input.lines.map((line) => {
+    const unitPrice = Number(productById.get(line.productId)!.price);
+    const gross = unitPrice * line.quantity;
+    subtotal += gross;
+    return {
+      productId: line.productId,
+      quantity: line.quantity,
+      unitPrice,
+      lineTotal: round2(applyDiscount(gross, discount)),
+    };
+  });
+  const total = round2(applyDiscount(subtotal, discount));
+
+  const last = await prisma.order.aggregate({
+    where: { organizationId },
+    _max: { number: true },
+  });
+
+  return prisma.order.create({
+    data: {
+      organizationId,
+      number: (last._max.number ?? 0) + 1,
+      customerName: input.customerName,
+      discountPercent: discount,
+      total,
+      lines: { create: lines },
+    },
+    include: orderInclude,
+  });
+}
+
+/** Подтверждение: проверяем наличие и резервируем товар под заказ. */
+export async function confirmOrder(id: string) {
+  const order = await findOrder(id);
+  if (order.status !== "DRAFT") {
+    throw new HttpError(409, "Подтвердить можно только черновик");
+  }
+
+  for (const line of order.lines) {
+    const stock = await prisma.stockItem.findUnique({ where: { productId: line.productId } });
+    if (!stock || stock.onHand < line.quantity) {
+      throw new HttpError(409, `Не хватает товара «${line.product.name}»`);
+    }
+  }
+
+  await prisma.$transaction([
+    ...order.lines.map((line) =>
+      prisma.stockItem.update({
+        where: { productId: line.productId },
+        data: { reserved: { increment: line.quantity } },
+      }),
+    ),
+    prisma.order.update({ where: { id }, data: { status: "CONFIRMED" } }),
+  ]);
+
+  return findOrder(id);
+}
+
+/** Отгрузка: товар уходит с полки, резерв под него снимается. */
+export async function shipOrder(id: string) {
+  const order = await findOrder(id);
+  if (order.status !== "CONFIRMED") {
+    throw new HttpError(409, "Отгрузить можно только подтверждённый заказ");
+  }
+
+  await prisma.$transaction([
+    ...order.lines.map((line) =>
+      prisma.stockItem.update({
+        where: { productId: line.productId },
+        data: {
+          onHand: { decrement: line.quantity },
+          reserved: { decrement: line.quantity },
+        },
+      }),
+    ),
+    prisma.order.update({ where: { id }, data: { status: "SHIPPED" } }),
+  ]);
+
+  return findOrder(id);
+}
+
+/** Отмена: возвращаем зарезервированный товар в доступный остаток. */
+export async function cancelOrder(id: string) {
+  const order = await findOrder(id);
+  if (order.status === "CANCELLED") {
+    throw new HttpError(409, "Заказ уже отменён");
+  }
+
+  const releaseReserve =
+    order.status === "DRAFT"
+      ? []
+      : order.lines.map((line) =>
+          prisma.stockItem.update({
+            where: { productId: line.productId },
+            data: { reserved: { decrement: line.quantity } },
+          }),
+        );
+
+  await prisma.$transaction([
+    ...releaseReserve,
+    prisma.order.update({ where: { id }, data: { status: "CANCELLED" } }),
+  ]);
+
+  return findOrder(id);
+}

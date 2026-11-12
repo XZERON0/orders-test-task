@@ -1,0 +1,157 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: #f6f7f9;
+}
+
+a {
+  color: #2457d6;
+  text-decoration: none;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e3e5e8;
+}
+
+.header nav {
+  display: flex;
+  gap: 16px;
+  font-weight: 600;
+}
+
+.main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #e3e5e8;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef0f2;
+}
+
+th {
+  font-weight: 600;
+  color: #5b6168;
+  background: #fafbfc;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+button,
+.button {
+  padding: 6px 12px;
+  border: 1px solid #c9cdd2;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+button.primary,
+.button.primary {
+  background: #2457d6;
+  border-color: #2457d6;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input,
+select {
+  padding: 6px 8px;
+  border: 1px solid #c9cdd2;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e3e5e8;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.error {
+  color: #c62828;
+  margin: 8px 0;
+}
+
+.status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eef0f2;
+  font-size: 12px;
+}
+
+.status-CONFIRMED {
+  background: #e3ecff;
+}
+
+.status-SHIPPED {
+  background: #e2f5e7;
+}
+
+.status-CANCELLED {
+  background: #fde7e7;
+}
+
+.total {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: right;
+  margin-top: 12px;
+}

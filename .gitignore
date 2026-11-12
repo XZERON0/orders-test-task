@@ -1,0 +1,11 @@
+node_modules/
+.env
+dist/
+.next/
+next-env.d.ts
+backend/src/generated/
+*.log
+*.tsbuildinfo
+.qodo/
+all_json.txt
+all_ts.txt
