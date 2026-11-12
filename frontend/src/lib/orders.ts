@@ -25,13 +25,23 @@ export type OrderAction = "confirm" | "ship" | "cancel";
 export function useOrderAction(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (action: OrderAction) => api<Order>(`/orders/${id}/${action}`, { method: "POST" }),
-    onSuccess: (order) => {
+    mutationFn: (action: OrderAction) =>
+      api<Order>(`/orders/${id}/${action}`, { method: "POST" }),
+    onSuccess: async (order) => {
       queryClient.setQueryData(orderKey(id), order);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ordersKey,
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: productsKey,
+          exact: true,
+        }),
+      ]);
     },
   });
 }
-
 export function useCreateOrder() {
   const queryClient = useQueryClient();
   return useMutation({
