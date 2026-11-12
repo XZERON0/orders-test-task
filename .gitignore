@@ -9,3 +9,4 @@ backend/src/generated/
 .qodo/
 all_json.txt
 all_ts.txt
+all_tsback.txt

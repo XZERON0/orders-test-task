@@ -6,7 +6,7 @@ import { useOrderAction, type OrderAction } from "@/lib/orders";
 const BUTTONS: { action: OrderAction; label: string; visible: (order: Order) => boolean }[] = [
   { action: "confirm", label: "Подтвердить", visible: (o) => o.status === "DRAFT" },
   { action: "ship", label: "Отгрузить", visible: (o) => o.status === "CONFIRMED" },
-  { action: "cancel", label: "Отменить", visible: (o) => o.status !== "CANCELLED" },
+  { action: "cancel", label: "Отменить", visible: (o) => o.status === "DRAFT" || o.status === "CONFIRMED" },
 ];
 
 export function OrderActions({ order }: { order: Order }) {

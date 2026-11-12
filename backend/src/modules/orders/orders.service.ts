@@ -98,10 +98,7 @@ export async function createOrder(
 }
 
 /** Подтверждение: проверяем наличие и резервируем товар под заказ. */
-export async function confirmOrder(
-  id: string,
-  organizationId: string,
-) {
+export async function confirmOrder(id: string, organizationId: string) {
   await prisma.$transaction(async (tx) => {
     const order = await tx.order.findFirst({
       where: { id, organizationId },
@@ -138,10 +135,7 @@ export async function confirmOrder(
       `;
 
       if (affected !== 1) {
-        throw new HttpError(
-          409,
-          `Не хватает товара «${line.product.name}»`,
-        );
+        throw new HttpError(409, `Не хватает товара «${line.product.name}»`);
       }
     }
   });
@@ -174,25 +168,42 @@ export async function shipOrder(id: string, organizationId: string) {
 
 /** Отмена: возвращаем зарезервированный товар в доступный остаток. */
 export async function cancelOrder(id: string, organizationId: string) {
-  const order = await findOrder(id, organizationId);
-  if (order.status === "CANCELLED") {
-    throw new HttpError(409, "Заказ уже отменён");
-  }
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findFirst({
+      where: { id, organizationId },
+      include: orderInclude,
+    });
+    if (!order) {
+      throw new HttpError(404, "Заказ не найден");
+    }
+    if (order.status === "CANCELLED") {
+      throw new HttpError(409, "Заказ уже отменён");
+    }
+    if (order.status === "SHIPPED") {
+      throw new HttpError(409, "Отгруженный заказ нельзя отменить");
+    }
+    const updated = await tx.order.updateMany({
+      where: {
+        id,
+        organizationId,
+        status: order.status,
+      },
+      data: { status: "CANCELLED" },
+    });
+    if (updated.count !== 1) {
+      throw new HttpError(409, "Статус заказа уже изменился");
+    }
 
-  const releaseReserve =
-    order.status === "DRAFT"
-      ? []
-      : order.lines.map((line) =>
-          prisma.stockItem.update({
-            where: { productId: line.productId },
-            data: { reserved: { decrement: line.quantity } },
-          }),
-        );
-
-  await prisma.$transaction([
-    ...releaseReserve,
-    prisma.order.update({ where: { id }, data: { status: "CANCELLED" } }),
-  ]);
-
+    if (order.status === "CONFIRMED") {
+      for (const line of order.lines) {
+        await tx.stockItem.update({
+          where: { productId: line.productId },
+          data: {
+            reserved: { decrement: line.quantity },
+          },
+        });
+      }
+    }
+  });
   return findOrder(id, organizationId);
 }

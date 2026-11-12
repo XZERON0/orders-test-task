@@ -197,7 +197,42 @@ describe("жизненный цикл заказа", () => {
     expect(stock.reserved).toBe(1);
     expect(stock.onHand - stock.reserved).toBe(0);
   });
+  it("QA-105: нельзя отменить уже отгруженный заказ", async () => {
+    const id = await createOrder(2);
+    const confirmed = await as("alice").post(`/api/orders/${id}/confirm`);
+    expect(confirmed.status).toBe(200);
+    const shipped = await as("alice").post(`/api/orders/${id}/ship`);
+    expect(shipped.status).toBe(200);
+    const before = await stockOf(fixture.productA.id);
+    expect(before).toMatchObject({
+      onHand: 8,
+      reserved: 0,
+    });
+    const cancelled = await as("alice").post(`/api/orders/${id}/cancel`);
+    expect(cancelled.status).toBe(409);
+    const after = await stockOf(fixture.productA.id);
+    expect(after).toMatchObject({
+      onHand: 8,
+      reserved: 0,
+    });
+    const order = await as("alice").get(`/api/orders/${id}`);
 
+    expect(order.body.status).toBe("SHIPPED");
+  });
+  it("QA-105: конкурентная отмена не освобождает резерв дважды", async () => {
+    const id = await createOrder(2);
+    await as("alice").post(`/api/orders/${id}/confirm`);
+    const [first, second] = await Promise.all([
+      as("alice").post(`/api/orders/${id}/cancel`),
+      as("alice").post(`/api/orders/${id}/cancel`),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+
+    expect(await stockOf(fixture.productA.id)).toMatchObject({
+      onHand: 10,
+      reserved: 0,
+    });
+  });
   it("подтверждение резервирует товар", async () => {
     const id = await createOrder(3);
 
