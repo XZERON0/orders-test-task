@@ -10,14 +10,19 @@ const orderInclude = {
   },
 } as const;
 
-async function findOrder(id: string) {
-  const order = await prisma.order.findUnique({
-    where: { id },
+async function findOrder(id: string, organizationId: string) {
+  const order = await prisma.order.findFirst({
+    where: {
+      id,
+      organizationId,
+    },
     include: orderInclude,
   });
+
   if (!order) {
     throw new HttpError(404, "Заказ не найден");
   }
+
   return order;
 }
 
@@ -29,8 +34,8 @@ export async function listOrders(organizationId: string) {
   });
 }
 
-export async function getOrder(id: string) {
-  return findOrder(id);
+export async function getOrder(id: string, organizationId: string) {
+  return findOrder(id, organizationId);
 }
 
 export async function createOrder(
@@ -95,8 +100,8 @@ export async function createOrder(
 }
 
 /** Подтверждение: проверяем наличие и резервируем товар под заказ. */
-export async function confirmOrder(id: string) {
-  const order = await findOrder(id);
+export async function confirmOrder(id: string, organizationId:string) {
+  const order = await findOrder(id, organizationId);
   if (order.status !== "DRAFT") {
     throw new HttpError(409, "Подтвердить можно только черновик");
   }
@@ -120,12 +125,12 @@ export async function confirmOrder(id: string) {
     prisma.order.update({ where: { id }, data: { status: "CONFIRMED" } }),
   ]);
 
-  return findOrder(id);
+  return findOrder(id, organizationId);
 }
 
 /** Отгрузка: товар уходит с полки, резерв под него снимается. */
-export async function shipOrder(id: string) {
-  const order = await findOrder(id);
+export async function shipOrder(id: string, organizationId: string) {
+  const order = await findOrder(id, organizationId);
   if (order.status !== "CONFIRMED") {
     throw new HttpError(409, "Отгрузить можно только подтверждённый заказ");
   }
@@ -143,12 +148,12 @@ export async function shipOrder(id: string) {
     prisma.order.update({ where: { id }, data: { status: "SHIPPED" } }),
   ]);
 
-  return findOrder(id);
+  return findOrder(id, organizationId);
 }
 
 /** Отмена: возвращаем зарезервированный товар в доступный остаток. */
-export async function cancelOrder(id: string) {
-  const order = await findOrder(id);
+export async function cancelOrder(id: string, organizationId: string) {
+  const order = await findOrder(id, organizationId);
   if (order.status === "CANCELLED") {
     throw new HttpError(409, "Заказ уже отменён");
   }
@@ -168,5 +173,5 @@ export async function cancelOrder(id: string) {
     prisma.order.update({ where: { id }, data: { status: "CANCELLED" } }),
   ]);
 
-  return findOrder(id);
+  return findOrder(id, organizationId);
 }

@@ -1,6 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/prisma.js";
-import { as, resetDb, seedTwoOrganizations, createProduct, stockOf } from "./helpers.js";
+import {
+  as,
+  resetDb,
+  seedTwoOrganizations,
+  createProduct,
+  stockOf,
+} from "./helpers.js";
 
 let fixture: Awaited<ReturnType<typeof seedTwoOrganizations>>;
 
@@ -26,7 +32,6 @@ describe("создание заказа", () => {
       customerName: "Покупатель",
       lines: [{ productId: fixture.productA.id, quantity: 2 }],
     });
-
     expect(res.status).toBe(201);
     expect(res.body.number).toBe(1);
     expect(res.body.status).toBe("DRAFT");
@@ -51,7 +56,6 @@ describe("создание заказа", () => {
         onHand: 10,
       }),
     ]);
-
     const res = await as("alice").post("/api/orders", {
       customerName: "Тест QA-101",
       discountPercent: 10,
@@ -60,14 +64,11 @@ describe("создание заказа", () => {
         quantity: 1,
       })),
     });
-
     expect(res.status).toBe(201);
     expect(res.body.lines).toHaveLength(3);
-
     for (const line of res.body.lines) {
       expect(Number(line.lineTotal)).toBe(300);
     }
-
     const sumOfLines = res.body.lines.reduce(
       (sum: number, line: { lineTotal: string }) =>
         sum + Number(line.lineTotal),
@@ -76,6 +77,29 @@ describe("создание заказа", () => {
     expect(Number(res.body.total)).toBe(900);
     expect(Number(res.body.total)).toBe(sumOfLines);
   });
+  describe("QA-102: изоляция заказов организаций", () => {
+    it("не позволяет просматривать заказ другой организации", async () => {
+      const created = await as("bob").post("/api/orders", {
+        customerName: "Секретный клиент",
+        lines: [
+          {
+            productId: fixture.productB.id,
+            quantity: 1,
+          },
+        ],
+      });
+      expect(created.status).toBe(201);
+      const orderId = created.body.id;
+      // Владелец может открыть заказ
+      const ownerResponse = await as("bob").get(`/api/orders/${orderId}`);
+      expect(ownerResponse.status).toBe(200);
+      // Пользователь другой организации не может
+      const foreignResponse = await as("alice").get(`/api/orders/${orderId}`);
+      expect(foreignResponse.status).toBe(404);
+      expect(foreignResponse.body).not.toHaveProperty("lines");
+      expect(foreignResponse.body).not.toHaveProperty("customerName");
+    });
+  });
 
   it("применяет скидку", async () => {
     const res = await as("alice").post("/api/orders", {
@@ -83,7 +107,6 @@ describe("создание заказа", () => {
       discountPercent: 10,
       lines: [{ productId: fixture.productA.id, quantity: 3 }],
     });
-
     expect(res.status).toBe(201);
     expect(res.body.total).toBe("2700");
   });

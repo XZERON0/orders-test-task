@@ -18,7 +18,8 @@ ordersRouter.get("/", async (req, res) => {
 });
 
 ordersRouter.get("/:id", async (req, res) => {
-  res.json(await getOrder(req.params.id));
+  const { organizationId } = currentUser(req);
+  res.json(await getOrder(req.params.id, organizationId));
 });
 
 ordersRouter.post("/", async (req, res) => {
@@ -28,13 +29,16 @@ ordersRouter.post("/", async (req, res) => {
 });
 
 ordersRouter.post("/:id/confirm", async (req, res) => {
-  res.json(await confirmOrder(req.params.id));
+  const { organizationId } = currentUser(req);
+  res.json(await confirmOrder(req.params.id, organizationId));
 });
 
 ordersRouter.post("/:id/ship", async (req, res) => {
-  res.json(await shipOrder(req.params.id));
+  const { organizationId } = currentUser(req);
+  res.json(await shipOrder(req.params.id, organizationId));
 });
 
 ordersRouter.post("/:id/cancel", async (req, res) => {
-  res.json(await cancelOrder(req.params.id));
+  const { organizationId } = currentUser(req);
+  res.json(await cancelOrder(req.params.id, organizationId));
 });
